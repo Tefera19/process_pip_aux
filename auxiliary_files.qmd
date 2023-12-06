@@ -1,0 +1,201 @@
+---
+title: "Auxiliary Files"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+
+  library(data.table)
+  library(dplyr)
+```
+
+## List of Auxiliary Files
+
+Here is the list of auxiliary flies along with variable lists within each of the auxiliary data. In the variable list, the key variable(s) for the underline auxiliary file are represented as bold text. Variables that can be used as interchangeable/ replacement for any of the key variables are represented in square brackets.
+
+1.  pfw: wb_region_code, **country_code**, pcn_region_code, ctryname, **year**, \[surveyid_year\], timewp, fieldwork, **survey_acronym**, link, altname, survey_time, wbint_link, wbext_link, alt_link, pip_meta, surv_title, surv_producer, survey_coverage, \[welfare_type\], use_imputed, use_microdata, use_bin, use_groupdata, reporting_year, survey_comparability, comp_note, preferable, display_cp, fieldwork_range, \[survey_year\], ref_year_des, wf_baseprice, wf_baseprice_note, wf_baseprice_des, wf_spatial_des, wf_spatial_var, cpi_replication, cpi_domain, cpi_domain_var, wf_currency_des, ppp_replication, ppp_domain, ppp_domain_var, wf_add_temp_des, wf_add_temp_var, wf_add_spatial_des, wf_add_spatial_var, tosplit, tosplit_var, inpovcal, oth_welfare1_type, oth_welfare1_var, gdp_domain, pce_domain, pop_domain, Note, pfw_id
+
+Note: *welfare_type* and *survey_acronym*, and *year* and *surveyid_year* can be interchangeably used as key to merge pfw data with other auxiliary files.
+
+2.  cpi: **country_code**, **cpi_year**, \[survey_year\], cpi, ccf, **survey_acronym**, change_cpi2011, cpi_domain, cpi_domain_value, cpi2017_unadj, cpi2011_unadj, cpi2011, cpi2017, cpi2011_SM22, cpi2017_SM22, cpi2005, **cpi_data_level**, cpi2011_SM23, cpi2017_SM23, cpi_id
+
+Note: *cpi_year* and *survey_year* can be interchangeably used as the pary of key variables.
+
+3.  gdp: **country_code**, **year**, gdp, **gdp_data_level**, gdp_domain
+
+4.  gdm: survey_id, **country_code**, **surveyid_year**, \[survey_year\], welfare_type, survey_mean_lcu, distribution_type, gd_type, **pop_data_level**, pcn_source_file, pcn_survey_id
+
+5.  pce: **country_code**, **year**, pce, **pce_data_level**, pce_domain
+
+6.  pop: **country_code**, **year**, **pop_data_level**, pop, pop_domain
+
+7.  ppp: **country_code**, **ppp_year**, **release_version**, **adaptation_version**, ppp, ppp_default, ppp_default_by_year, ppp_domain, *ppp_data_level*
+
+Note: ppp auxiliary data may need to be reshaped to merge it with other auxiliary files.
+
+8.  maddison: **country_code**, **year**, mpd_gdp
+
+9.  weo: **country_code**, **year**, weo_gdp
+
+10. npl: **country_code**, **reporting_year**, nat_headcount, comparability, footnote
+
+11. countries: **country_code**, country_name, africa_split, africa_split_code, region, region_code, world, world_code
+
+12. regions: region, **region_code**, grouping_type
+
+13. income_groups: **country_code**, **year_data**, incgroup_historical, fcv_historical, ssa_subregion_code
+
+14. metadata: **country_code**, country_name, reporting_year, \[survey_year\], **surveyid_year**, survey_title, survey_conductor, survey_coverage, **welfare_type**, distribution_type, metadata
+
+## Relationship between auxiliary files
+
+Understanding the relationship among auxiliary files help to merge the files easily. The auxiliary datsets are grouped into three based on unique level of observations. Datasets within each group have one-to-one relationship.
+
+-   Group one: maddison, weo
+
+Note: Group one files can be merged with any of the auxiliary files using **country_code** and **year** varaibles.
+
+-   Group two: gdp, pop, gdm, pce, *ppp*
+
+Note: ppp requires reshaping to map one-to-one within its group members.
+
+-   Group three: metadata, cpi, pfw
+
+# one-to-one relationship
+
+Datasets within each group have one-to-one relationship
+
+# many-to-one
+
+Datasets in Group two and three have many-to-one relationship with datasets in Group one.
+
+## Merge auxiliary files
+
+In order to merge any two auxiliary data, we may need to change part of key variable names. For example, reporting level variable such as pop_data_level, cpi_data_level, gdp_data_level, pce_data_level and ppp_data_level are same in content and can be renamed as *reporting_level* and **year** can be renamed as **surveyid_year**.
+
+We may need to generate a data that contains set of key variables. For example, to merge pfw data with any of the datasets at reporting level (pop, pce, gdp, gdm, ppp) we need to add reporting level variable in pfw data.
+
+Let's generate a data that can be used to merge pfw data with datasets at reporting level. This dataset is going to be generated using variables from pfw and cpi datasets.
+
+```{r, generate key variables for pfw data}
+
+# pfw ---------------------------------------------------
+pfw <- pipload::pip_load_aux("pfw")
+
+pfw_key_options <- pfw[, .(country_code,
+                            year,
+                            surveyid_year,
+                            survey_acronym,
+                            survey_coverage,
+                            welfare_type,
+                            survey_year,
+                            cpi_domain,
+                            cpi_domain_var)]
+
+pfw_key_options |> count(cpi_domain_var)
+
+pfw_key_options <- pfw_key_options[, cpi_domain_value:=
+                                       fifelse(cpi_domain_var == "urban",
+                                               0, 1)]
+
+# cpi ---------------------------------------------------
+cpi <- pipload::pip_load_aux("cpi")
+
+cpi_key <- cpi[, .(country_code,
+                    cpi_year,
+                    survey_year,
+                    survey_acronym,
+                    cpi_domain,
+                    cpi_domain_value,
+                    cpi_data_level)] |>
+  setnames("cpi_data_level", "reporting_level")
+
+cpi_key |> count(cpi_domain_value)
+  
+cpi_key <- cpi_key[, cpi_domain :=
+                       fifelse(cpi_domain == "National",
+                                             1, 2)]
+
+cpi_key$cpi_domain  <-  as.numeric(cpi_key$cpi_domain)
+
+pfw_cpi_key <- cpi_key[pfw_key_options, on = .(country_code, survey_year,
+                              survey_acronym, cpi_domain, cpi_domain_value)]
+
+pfw_cpi_key <- pfw_cpi_key |>
+  group_by(country_code, survey_year,
+           survey_acronym) |>
+  mutate(year_ = mean(year, na.rm = TRUE),
+         surveyid_year_ = mean(surveyid_year, na.rm = TRUE)) |>
+  ungroup() |> 
+  mutate(year_ = ifelse(is.na(year_), cpi_year, year_),
+         surveyid_year_ = ifelse(is.na(surveyid_year_), cpi_year, surveyid_year_),
+         year = ifelse(is.na(year), year_, year),
+         surveyid_year = ifelse(is.na(surveyid_year), surveyid_year_, surveyid_year)) |>
+  select(country_code, survey_year, survey_acronym, reporting_level, cpi_domain) |> setDT()
+
+
+any(duplicated(pfw_cpi_key, by = c("country_code", "survey_year", "survey_acronym", "cpi_domain")))
+
+
+```
+
+In order to merge pfw data with any of the Group two (gdp, pop, gdm, pce, *ppp*) or Group three (cpi) dataset:
+
+1.  Merge *pfw_cpi_key* data with pfw dataset
+2.  Rename ???\_data_level variable in the other dataset to reporting_level. Where ??? could be pop, cpi, gdp, or pce depending on the type of the auxiliary file. For example:
+
+```{r}
+
+# merging pfw, cpi, pop, pce, gdp, gdm and ppp
+
+# first, merge pfw data with pfw_cpi_key datasets
+pfw <- pipload::pip_load_aux("pfw")
+
+pfw <-  pfw_cpi_key[pfw, on= .(country_code, survey_year,
+                                          survey_acronym, cpi_domain)]
+
+# merge pfw with cpi
+cpi <- pipload::pip_load_aux("cpi")
+cpi <- cpi[, -c("cpi_domain")] |> # since it is available in pfw
+  setnames("cpi_data_level", "reporting_level")
+
+pfw_cpi <- cpi[pfw, on = .(country_code, survey_year, survey_acronym, reporting_level)]
+
+# merge pfw_cpi with pop 
+pop <- pipload::pip_load_aux("pop")
+pop <- pop[, -c("pop_domain")] |> # since it is available in pfw
+  setnames("pop_data_level", "reporting_level")
+
+pfw_cpi_pop <- pop[pfw_cpi, on = .(country_code, year, reporting_level)]
+
+# merge pfw_cpi_pop with pce
+pce <- pipload::pip_load_aux("pce")
+pce <- pce[, -c("pce_domain")] |> # since it is available in pfw
+  setnames("pce_data_level", "reporting_level")
+
+pfw_cpi_pop_pce <- pce[pfw_cpi_pop, on = .(country_code, year, reporting_level)]
+
+# merge pfw_cpi_pop_pce with gdp
+gdp <- pipload::pip_load_aux("gdp")
+gdp <- gdp[, -c("gdp_domain")] |> # since it is available in pfw
+  setnames("gdp_data_level", "reporting_level")
+
+pfw_cpi_pop_pce_gdp <- gdp[pfw_cpi_pop_pce, 
+                           on = .(country_code, year, reporting_level)]
+
+
+# merge pfw_cpi_pop_pce_gdp with ppp
+# taking the default ppp year
+ppp <- pipload::pip_load_aux("ppp")
+ppp <- ppp[ppp_default == TRUE, .(country_code, ppp_year, ppp, ppp_data_level)] |> 
+  setnames("ppp_data_level", "reporting_level")
+any(duplicated(ppp))
+
+pfw_cpi_pop_pce_gdp_ppp <- ppp[pfw_cpi_pop_pce_gdp, 
+                           on = .(country_code, reporting_level)]
+#dcast(ppp, formula = country_code + reporting_level ~ ppp_year, value.var = "ppp")
+
+```
+
+As demonstrated in the above example, pfw_cpi_key data is a key to merge pfw data with any of the auxiliary data files.
